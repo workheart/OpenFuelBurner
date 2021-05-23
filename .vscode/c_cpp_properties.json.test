@@ -1,0 +1,63 @@
+{
+    "configurations": [
+        {
+            "name": "!!! WARNING !!! AUTO-GENERATED FILE, PLEASE DO NOT MODIFY IT AND USE https://docs.platformio.org/page/projectconf/section_env_build.html#build-flags"
+        },
+        {
+            "name": "Win32",
+            "includePath": [
+                "f:/Documents/PCB/Offenes_Feuer/Firmware/include",
+                "f:/Documents/PCB/Offenes_Feuer/Firmware/src",
+                "f:/Documents/PCB/Offenes_Feuer/Firmware/.pio/libdeps/miniatmega328/Adafruit SSD1306",
+                "f:/Documents/PCB/Offenes_Feuer/Firmware/.pio/libdeps/miniatmega328/Adafruit GFX Library",
+                "f:/Documents/PCB/Offenes_Feuer/Firmware/.pio/libdeps/miniatmega328/Adafruit BusIO",
+                "C:/Users/Esteban/.platformio/packages/framework-arduino-avr/libraries/SPI/src",
+                "C:/Users/Esteban/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
+                "C:/Users/Esteban/.platformio/packages/framework-arduino-avr/cores/arduino",
+                "C:/Users/Esteban/.platformio/packages/framework-arduino-avr/variants/eightanaloginputs",
+                "C:/Users/Esteban/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
+                "C:/Users/Esteban/.platformio/packages/framework-arduino-avr/libraries/HID/src",
+                "C:/Users/Esteban/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
+                "C:/Users/Esteban/.platformio/packages/tool-unity",
+                ""
+            ],
+            "browse": {
+                "limitSymbolsToIncludedHeaders": true,
+                "path": [
+                    "f:/Documents/PCB/Offenes_Feuer/Firmware/include",
+                    "f:/Documents/PCB/Offenes_Feuer/Firmware/src",
+                    "f:/Documents/PCB/Offenes_Feuer/Firmware/.pio/libdeps/miniatmega328/Adafruit SSD1306",
+                    "f:/Documents/PCB/Offenes_Feuer/Firmware/.pio/libdeps/miniatmega328/Adafruit GFX Library",
+                    "f:/Documents/PCB/Offenes_Feuer/Firmware/.pio/libdeps/miniatmega328/Adafruit BusIO",
+                    "C:/Users/Esteban/.platformio/packages/framework-arduino-avr/libraries/SPI/src",
+                    "C:/Users/Esteban/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
+                    "C:/Users/Esteban/.platformio/packages/framework-arduino-avr/cores/arduino",
+                    "C:/Users/Esteban/.platformio/packages/framework-arduino-avr/variants/eightanaloginputs",
+                    "C:/Users/Esteban/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
+                    "C:/Users/Esteban/.platformio/packages/framework-arduino-avr/libraries/HID/src",
+                    "C:/Users/Esteban/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
+                    "C:/Users/Esteban/.platformio/packages/tool-unity",
+                    ""
+                ]
+            },
+            "defines": [
+                "PLATFORMIO=50003",
+                "ARDUINO_AVR_MINI",
+                "F_CPU=16000000L",
+                "ARDUINO_ARCH_AVR",
+                "ARDUINO=10808",
+                "__AVR_ATmega328P__",
+                ""
+            ],
+            "intelliSenseMode": "gcc-x64",
+            "cStandard": "c11",
+            "cppStandard": "c++11",
+            "compilerPath": "C:/Users/Esteban/.platformio/packages/toolchain-atmelavr/bin/avr-gcc.exe",
+            "compilerArgs": [
+                "-mmcu=atmega328p",
+                ""
+            ]
+        }
+    ],
+    "version": 4
+}

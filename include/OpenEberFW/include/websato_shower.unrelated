@@ -1,0 +1,451 @@
+// written with love by Mael
+
+#include <math.h> // needed to perform some calculations
+
+int fuel_pump_pin = 5;
+int glow_plug_pin = 6;
+int burn_fan_pin = 9;
+int water_pump_pin = 10;
+int water_temp_pin = A0;
+int exhaust_temp_pin = A1;
+int push_pin = 13;
+
+float fan_speed; // percent
+float water_pump_speed; // percent
+float fuel_need; // percent
+int glow_time; // seconds
+float water_temp; // degres C
+float exhaust_temp; // degres C
+float exhaust_temp_sec[10]; // array of last 10 sec water temp, degres C
+int shower_timeout;
+
+bool shower;
+bool burn;
+bool webasto_fail;
+bool cold_shower;
+bool lean_burn;
+
+float shower_target = 39; // degres C
+float shower_min = 32; // minimal temperature for shower, degres C
+int burn_mode = 0;
+
+void setup() {
+
+  TCCR1B = TCCR1B & 0b11111000 | 0x01;  // magic Fast PWM parameter
+
+  pinMode(glow_plug_pin, OUTPUT);
+  pinMode(fuel_pump_pin, OUTPUT);
+  pinMode(burn_fan_pin, OUTPUT);
+  pinMode(water_pump_pin, OUTPUT);
+  pinMode(water_temp_pin, INPUT);
+  pinMode(exhaust_temp_pin, INPUT);
+  pinMode(push_pin, INPUT_PULLUP); // important, this pulls de button pin to high, so when pressed it goes to low
+
+  Serial.begin(115200);
+}
+
+void loop() { // runs over and over again, calling the functions one by one
+  temp_data();
+  control();
+  shower_void();
+  webasto();
+}
+
+void temp_data() { // keeps the temp variables updated
+  static unsigned long timer;
+  if (millis() < timer) {
+    timer = millis();
+  }
+  // call the get_temp function and smoothen the result
+  water_temp = (9 * water_temp + get_temp(water_temp_pin)) / 10; 
+  exhaust_temp = (9 * exhaust_temp + get_temp(exhaust_temp_pin)) / 10;
+
+  if (millis() > timer + 1000) { // every sec
+    timer = millis();
+      
+    for ( int i = 9; i >= 1 ; i-- ) { // updating the exhaust temperature history
+      exhaust_temp_sec[i] = exhaust_temp_sec[i - 1]; // shift array values, deleting the older one
+    }
+    exhaust_temp_sec[0] = exhaust_temp; // add new temp value
+  }
+}
+
+void control() {
+  static unsigned long timer;
+  if (millis() < timer) {
+    timer = millis();
+  }
+  static bool pushed;
+  static bool long_press;
+  bool push;
+
+  if (digitalRead(push_pin)) {
+    push = 0;
+  } else {
+    push = 1;
+  }
+
+  if (!push && !pushed) {
+    timer = millis();
+  }
+
+  if (push && !pushed) {
+    timer = millis();
+    pushed = 1;
+  }
+
+  if (push && pushed && millis() > timer + 500) {
+    if (!long_press) { // when long press
+      long_press = 1;
+
+      if (webasto_fail) { // reset webasto fail if there has been a failure
+        webasto_fail = 0;
+
+      } else {
+        if (shower || cold_shower) { // during a shower, increase de timeout by 40 seconds
+          shower_timeout += 40;
+
+        } else { // if shower is off, start a cold shower with a 30 seconds timeout
+          cold_shower = 1;
+          shower_timeout = 30;
+        }
+      }
+
+    }
+  }
+
+  if (pushed && !push) {
+    if (millis() > timer + 50 && !long_press) { // when short press
+
+      if (cold_shower) { // if shower if on, turn it off, with a delay of 15 seconds if it was hot
+        shower_timeout = 0;
+      } else if (shower) {
+        shower_timeout = 15; // this delay helps to burn all the remaining fuel, as it will switch on lean_burn
+
+      } else { // if shower is off, turn it on with a 60 seconds timeout
+        shower = 1;
+        shower_timeout = 60;
+      }
+    }
+    pushed = 0;
+    long_press = 0;
+  }
+}
+
+void shower_void() {
+  static unsigned long secs_timer;
+  if (millis() < secs_timer) {
+    secs_timer = millis();
+  }
+  static int seconds;
+
+  if (shower) {
+    burn = 1;
+
+    if (shower_timeout < 15) { // helps to burn all the remaining fuel in the combustion chamber
+      lean_burn = 1;
+    } else {
+      lean_burn = 0;
+    }
+
+    if (burn_mode != 1 && (exhaust_temp > exhaust_temp_sec[9] + 1 || exhaust_temp > 30)) { // if getting hot
+
+      if (water_temp < shower_min) {
+        water_pump_speed = 10;
+        // starts circulating water slowly, otherwise it could boil inside the webasto
+
+      } else if (water_temp - shower_target > -2) { // if water temp gets really close to the target
+        water_pump_speed = mapf(water_temp, shower_target - 1, shower_target + 2, 10, 60);
+        // the mapf fonction will regulate the flow betwen 10% and 60% depending on how close water temp is to the target
+
+        if (millis() > secs_timer + 1000) { // decrements shower timout if water is warm enough
+          secs_timer = millis();
+          shower_timeout --;
+        }
+
+      } else if (water_temp - shower_target > 2) { // if water getting to hot
+        water_pump_speed = mapf(water_temp, shower_target + 2 , shower_target + 5, 60, 100);
+        // this it to prevent water boiling inside the webasto
+      }
+
+    } else {
+      water_pump_speed = 0;
+    }
+
+    if (shower_timeout == 0) {
+      shower = 0;
+    }
+  }
+
+  else if (cold_shower) { // just a cold shower, brace yourself
+    burn = 0;
+    if (millis() > secs_timer + 1000) {
+      secs_timer = millis();
+      shower_timeout --;
+    }
+    water_pump_speed = 60;
+
+    if (shower_timeout == 0) {
+      cold_shower = 0;
+      water_pump_speed = 0;
+    }
+  }
+
+  else { // reinitialize variables
+    burn = 0;
+    water_pump_speed = 0;
+    seconds = 0;
+    shower_timeout = 0;
+    lean_burn = 0;
+  }
+
+  water_pump(); // calls the water_pump function
+}
+
+void webasto() { // this will handle the combustion
+  static unsigned long timer;
+  if (millis() < timer) {
+    timer = millis();
+  }
+  static float temp_init;
+  static int ignit_fail;
+  static int seconds;
+
+  if (millis() > timer + 1000) { // every seconds, run this
+    timer = millis();
+    seconds ++; // increment the seconds counter
+
+    // print all the interesting data
+    Serial.print(webasto_fail);
+    Serial.print(" - ");
+    Serial.print(ignit_fail);
+    Serial.print(" - ");
+    Serial.print(shower);
+    Serial.print(" - ");
+    Serial.print(burn);
+    Serial.print(" - ");
+    Serial.print(burn_mode);
+    Serial.print(" - ");
+    Serial.print(water_temp);
+    Serial.print(" - ");
+    Serial.print(exhaust_temp);
+    Serial.print(" - ");
+    Serial.print(fan_speed);
+    Serial.print(" - ");
+    Serial.print(fuel_need);
+    Serial.print(" - ");
+    Serial.print(glow_time);
+    Serial.print(" - ");
+    Serial.println(seconds);
+  }
+
+  if (!webasto_fail) { // if everything's going fine
+
+    if ((burn_mode == 0 || burn_mode == 3) && burn) {  // if the user wants a shower
+      // initiate the start sequence
+      burn_mode = 1;
+      seconds = 0;
+      temp_init = exhaust_temp; // store the exhaust temperature before trying to start the fire
+    }
+
+    if ((burn_mode == 1 || burn_mode == 2) && !burn) { // if the shower has ended
+      burn_mode = 3;
+      seconds = 0;
+      ignit_fail = 0;
+    }
+
+    if (ignit_fail > 3) { // if there was more than 3 attempts to start fire but all failed
+      webasto_fail = 1;
+      burn_mode = 3;
+      shower = 0;
+      burn = 0;
+    }
+
+    if (exhaust_temp > 85) { // if overheating
+      webasto_fail = 1;
+      burn_mode = 3;
+      shower = 0;
+      burn = 0;
+    }
+
+  } else { // if there has been a major failure, stop everything
+    shower = 0;
+    cold_shower = 0;
+    burn = 0;
+    ignit_fail = 0;
+  }
+
+  switch (burn_mode) {
+    case 0: { // everything is turned off in this mode
+        fan_speed = 0;
+        fuel_need = 0;
+        glow_time = 0;
+        lean_burn = 0;
+      } break;
+
+    case 1: { // the fire starting sequence
+
+        if (seconds < 3) {
+          fuel_need = 90; // get some fuel in the chamber
+          fan_speed = 10;
+        }
+
+        if (seconds == 4) {
+          fuel_need = 0; // stop and wait for it to spread all over the glow plug (important)
+          // don't forget that the fan is still spinning as it wasn't turned off
+        }
+
+        if (seconds == 7) {
+          glow_time = 12; // switch on the glow plug for 12 seconds so it ignites the fuel
+        }
+
+        if (seconds > 19) { // the glow plug has just been turn of (7+12=19)
+          fan_speed = 20; // get some more air and restart pumping fuel slowly
+          fuel_need = 20;
+        }
+
+        if (exhaust_temp - temp_init > 0.5) { // exhaust temp raised a bit meaning fire has started
+          burn_mode = 2; // go to main burning mode and initialize variables
+          seconds = 0;
+          glow_time = 0;
+          ignit_fail = 0;
+          temp_init = exhaust_temp;
+        }
+
+        if ((seconds > 50 && ignit_fail > 0) || seconds > 60) {
+          // the fire sequence didn't work, give it an other try
+          burn_mode = 0;
+          ignit_fail ++;
+        }
+
+      } break;
+
+    case 2: { // a really simple flame managment here, just get at full power
+
+        if (exhaust_temp < 82 || water_temp < 50) {
+          // full power, adust at your will, but no need to force too much air in
+          fan_speed = 60;
+          fuel_need = 90;
+
+        } else { // if overheating, slow everything down
+          fan_speed = 3;
+          fuel_need = 0;
+        }
+
+        if (fan_speed == 60 && exhaust_temp < 35 && exhaust_temp < exhaust_temp_sec[9]) { // if flame died
+          burn_mode = 0;
+          ignit_fail ++;
+        }
+
+        if (lean_burn) { // burn the remaining fuel in the chamber
+          fuel_need = 0;
+        }
+
+        if (seconds > 60 * 2) { // stop if running for more than 2 minutes (safety first)
+          webasto_fail = 1;
+        }
+      } break;
+
+    case 3: { // snuff out the fire, with just a little air to avoid fumes and backfire
+
+        fuel_need = 0;
+        fan_speed = 2;
+        if (seconds > 30 && exhaust_temp < exhaust_temp_sec[9]) {
+          // turn everything off if temperature is not raising
+          burn_mode = 0;
+        }
+      } break;
+  }
+
+  // call every output function
+  fuel_pump();
+  burn_fan();
+  glow_plug();
+}
+
+void fuel_pump() {
+  static unsigned long timer;
+  if (millis() < timer) {
+    timer = millis();
+  }
+  static bool pulsing;
+  int pulse_lenght = 11;
+
+  if (fuel_need > 0) {
+    int impulse_delay = mapf(fuel_need, 1, 100, 1000, 90);
+
+    if (pulsing == 0 && millis() > timer + impulse_delay) {
+      timer = millis();
+      pulsing = 1;
+    }
+    if (pulsing == 1 && millis() > timer + pulse_lenght) {
+      timer = millis();
+      pulsing = 0;
+    }
+  } else {
+    pulsing = 0;
+  }
+  analogWrite(fuel_pump_pin, 255 * pulsing);
+}
+
+void burn_fan() {
+  // the webasto fan runs on 10v so we need to that into account : pwm average of 14v for 10v = 0.7, 255 * 0.7 = 179
+  int percent_map = mapf(fan_speed, 0, 100, 0, 179); // pwm average of 14v for 10v = 0.7, 255 * 0.7 = 179
+  analogWrite(burn_fan_pin, percent_map);
+}
+
+void glow_plug() { // just turn the plug on if glow_time > 0, and decrement glow_time every second
+  static unsigned long timer;
+  if (millis() < timer || glow_time == 0) {
+    timer = millis();
+  }
+
+  if (millis() < timer + glow_time * 1000) {
+    digitalWrite(glow_plug_pin, LOW);
+  } else {
+    digitalWrite(glow_plug_pin, HIGH);
+    glow_time = 0;
+  }
+}
+
+void water_pump() {
+  int percent_map = mapf(water_pump_speed, 0, 100, 0, 255);
+  static bool overheat;
+
+  // if serious overheat
+  if (exhaust_temp > 80 || water_temp > 60) {
+    overheat = 1;
+    percent_map = 100;
+    webasto_fail = 1;
+  } else if (overheat && exhaust_temp < 60) {
+    overheat = 0;
+    percent_map = 0;
+  }
+
+  analogWrite(water_pump_pin, percent_map);
+}
+
+float get_temp(int temp_pin) { // read a sensor value, smoothen it a bit and convert it to C degrees
+  float temp = 0;
+  for (int i = 0; i < 10; i++) {
+    temp += analogRead(temp_pin);
+  }
+  temp /= 10;
+
+  if (temp < 25 || temp > 1000) { // check if sensor is good
+    webasto_fail = 1;
+    return 100;
+  } else {
+    temp = log(((10240000 / temp) - 10000));
+    temp = 1 / (0.001129148 + (0.000234125 + (0.0000000876741 * temp * temp )) * temp );
+    temp = temp - 273.15;
+    return temp;
+  }
+}
+
+float mapf(float x, float in_min, float in_max, float out_min, float out_max) {
+  // the perfect map fonction, with constraining and float handling
+  x = constrain(x, in_min, in_max);
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+        

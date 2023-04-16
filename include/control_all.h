@@ -1,6 +1,6 @@
 // main control cycle
 #include <Arduino.h>
-#include <burn_boot.h>
+#include "burn_boot.h"
 unsigned long ctimer;
 unsigned long ctimerold;
 int seconds= 0;
@@ -19,132 +19,129 @@ void control(){
         fuel_pump_speed = 0;
         glow_time =0;
         Flame = false;
-        if(TempFlame0>120){Fan_speed = 30;} // läuft immer wenn zu warm
+        if(cleanTempFlame0>90){Fan_speed = 60;} // läuft immer wenn zu warm
             else {Fan_speed = 0;}
             } break;
-    case 1: { ///////// boot 
+    
+    
+    case 1: { ///////// grub2
         if (major_fail){modus = 3;}
         if (millis() > ctimer){ctimer = millis();}
-        if (ctimer - ctimerold >= user_delay){ctimerold = ctimer; seconds ++;} // increment the seconds counter for convinience
+        if (ctimer - ctimerold >= 10UL*slowdown){ctimerold = ctimer; seconds ++;} // increment the seconds counter for convinience
         if (seconds < 0 ){fuel_pump_speed = 0;
                             dry = true;
                             glow_time = 30;
                             Fan_speed = 80;}               
         
-        if (seconds >= 0 ){                    // fahre kurve fuel und air nach burn_boot tabelle
-            fuel_pump_speed=fuel_boot[seconds]/FuelExtra;
-            Fan_speed=fan_boot[seconds]/AirExtra;
+        if (seconds == 0 ){                    // fahre kurve fuel und air nach burn_boot tabelle
+            fuel_pump_speed=200;              //prinming
+            Fan_speed=20*(AirExtra/100);        // 20% is about minimum fan speed
             dry = false;}
-        if (seconds == 1){dry = 0; glow_time=91;}
-        if (seconds == 20) {starttemp = cleanTempFlame0;}
-        if (seconds == 60 && (cleanTempFlame0 - starttemp) > 70)
-                {glow_time = 10;}                                                     // glühkerze aus bei 20° anstieg
-        if (seconds == 90 && (cleanTempFlame0 - starttemp) > 120)
-                {glow_time = 0;}  
-        // sollte jetz mal brennen und in nächsten modus starten
-        if (seconds > 120 && cleanTempFlame0 - starttemp > 150){Flame = true; Serial.println("burnt!!!");}  
-        if (seconds > 120 && cleanTempFlame0 - starttemp <= 150){
+        if (seconds == 1){glow_time=91;}        //Kerze an
+        if (seconds >= 3 && seconds <= 100){    fuel_pump_speed = (seconds*FuelExtra)/143;}  //sprit steigt jetzt von 0,2Hz auf ~7Hz über 100 sek   
+        if (seconds == 15) {                    
+                if (cleanTempFlame0 > 50)       {starttemp = cleanTempFlame0 - 30;}                 // ab jetzt wird temp steigung gemessen, bei warm start vorsprung...
+                else { starttemp = cleanTempFlame0;} }
+        if (seconds >= 25 && seconds <= 100){   Fan_speed = (seconds*AirExtra)/(125);}            // (seconds/1.25)*(AirExtra/100)  umgestellt u,m float zu vermeiden 125 = 1,25*100
+        if (seconds == 90 && (cleanTempFlame0 - starttemp) > 100)
+                {glow_time = 0;}  // wenns gut angegangen ist, kerze aus
+        if (seconds > 100){                     fuel_pump_speed = (100*FuelExtra)/143;
+                                                Fan_speed = (100*AirExtra)/125;}          // ab 100 sec nicht weiter stiegen
+        if (seconds > 130 && cleanTempFlame0 - starttemp > 120){Flame = true;}  
+        if (seconds > 130 && cleanTempFlame0 - starttemp <= 120){
                 ignit_fail ++;                              // wenn nich fehlzündung und 
                 fuel_pump_speed = 0;
                 glow_time = 0;
                 seconds = -60;}                                             // wieder von neuem mit 60sec pause
             
-        if (Flame && !sleep_mode){seconds = 0; modus = 6;}                  //wenn kein schlaf dann brenn / regeln
-        if (Flame && sleep_mode) {seconds = 0; modus = 5;}                  // wenn schlaf dann brenn leise
-        if (seconds >122){major_fail = 1; modus = 3;}                       // wenn 122sec dann irgendwas schief gegangen
+        if (Flame && !sleep_mode){seconds = 0; ignit_fail = 0; modus = 2;}                  //wenn kein schlaf dann brenn / regeln
+        if (Flame && sleep_mode) {seconds = 0; ignit_fail = 0; modus = 5;}                  // wenn schlaf dann brenn leise
+        if (seconds >132){major_fail = 1; modus = 3;}                       // wenn 122sec dann irgendwas schief gegangen
+            
             } break;
-
+            
 
     case 2: { ///////// Heizen
-            if (major_fail){modus = 3;}
-                        
-        if (TempWasserMax < 75){                      //5kw unter 70
-            fuel_pump_speed=4;
-            Fan_speed=80;
+        if (major_fail){modus = 3;}
+        ignit_fail = 0;                
+        if (cleanTempWasserMax < 50){                      //5kw unter 50
+            fuel_pump_speed = (100*FuelExtra) /143;
+            Fan_speed       = (100*AirExtra)  /125;
+            }
+        if (cleanTempWasserMax >= 60 && cleanTempWasserMax < 85){
+            fuel_pump_speed = (60*FuelExtra) /143;        //2.5hz 
+            Fan_speed       = (70*AirExtra)  /125;        //60%
             
             }
-        if (TempWasserMax >= 75 && TempWasserMax <85){
-            fuel_pump_speed = 2.5;
-            Fan_speed = 60;
-            
-            }
-        if (TempWasserMax >= 85){
+        if (cleanTempWasserMax >= 70){
             fuel_pump_speed = 0;
             Fan_speed = 60;            
-             modus = 3;}  
+             modus = 4;}  
             }break;
     case 3: { ///////// 100sec aus Blasen bei flammabriss etc FAN77 heiß Fan55 kalt
         if (millis() > cooltimer) {cooltimer = millis();}
-        if (cooltimer - cooltimerold >= user_delay) {cooltimerold = cooltimer; coolseconds ++;}
+        if (cooltimer - cooltimerold >= 1000UL) {cooltimerold = cooltimer; coolseconds ++;}
         fuel_pump_speed = 0;
-            if (TempFlame0 > 150){
+            if (TempFlame0 > 100){
             dry =1;
-            glow_time = 50;
+            glow_time = 10;
             Fan_speed = 77;}
                 else {
-                dry =1;
-                glow_time = 30;
-                Fan_speed = 55;            
+                dry =0;
+                glow_time = 0;
+                Fan_speed = 40;            
                 }
-        if (coolseconds > 100){ dry =0; coolseconds = 0;modus = 0;}
+        if (coolseconds > 100){ dry = 0; coolseconds = 0; major_fail = 0; modus = 0;}
         } break;
 
     case 4: { ///////// zirkulieren bis unter 60 (am ende des Brands)
 
             fuel_pump_speed = 0;
             glow_time = 0;
-        if (TempFlame0 > 70){Fan_speed = 30;}
+        if (TempFlame0 > 80){Fan_speed = 30;}
             else {Fan_speed=0;}
-        if (sleep_mode && TempWasserMax < 25){modus = 1;} //im schlafmodus warten bis wasser sehr kalt dann neustart
+        if (sleep_mode  && cleanTempWasserMax < 30){modus = 1;} //im schlafmodus warten bis wasser sehr kalt dann neustart
+        if (!sleep_mode && cleanTempWasserMax < 65){modus = 0;} // wenn temp unter 60 aus
 
         } break;
     
     case 5: { ///////// Leise Lange Heizen 
         if (major_fail){modus = 3;}
-                                
-        if (TempWasserMax < 50){                      //5kw unter 60
-            fuel_pump_speed = 3;
-            water_pump_speed = 100;
-            Fan_speed = 60;
+        ignit_fail = 0;                                
+        if (cleanTempWasserMax < 50){                      //5kw unter 60
+            fuel_pump_speed = (70*FuelExtra) /143;
+            Fan_speed       = (80*AirExtra)  /125;
             }
-        if (TempWasserMax >= 60 ){
-            fuel_pump_speed = 0;        //TODO kleinsmögliche leistungstufe finden
-            water_pump_speed = 50;      // sollte hier leise heizen bis zu warm wird
-            Fan_speed = 25;
+        if (cleanTempWasserMax >= 60 ){                     //XXX: zwischen 50 und 60 kann nicht getuned werden
+            fuel_pump_speed = (50*FuelExtra) /143;
+            Fan_speed       = (60*AirExtra)  /125;
             }
-        if (TempWasserMax > 80) {fuel_pump_speed = 0;  modus = 4;}    //regelpause
+        if (cleanTempWasserMax > 65) {fuel_pump_speed = 0;  modus = 4;}    //regelpause
             
             }break;
     case 6: { ///////// seriel tuning (nix ändern nur eben nicht aus)                            
             
+        if (major_fail){modus = 3;}
 
+            fuel_pump_speed = (100*FuelExtra) /143;
+            Fan_speed       = (100*AirExtra)  /125;
             }break;
     }
-
-
 
   }//ende contol funktion()
 
 
 
 //wasser pumpe laufen lassen und so
-void water_pump(){          // wenn brennt  dann reglt  zwischen 60 u 70 hoch außer auto über 13.3V aber immer über 105°C
-
-    if (modus >=1) { // nur regeln im Betrieb
-        //FIXME geht gerad nicht weil if (cleanBoard_Voltage < 13.3)              // muss nur laufen wenn auto aus ( volt kleiner 13.3V) oder übertemperatur
-        //{ 
-        
-        if (!sleep_mode && TempWasserMax < 59 )              {water_pump_speed=0;}       // unter 60 nicht regeln
-        if (sleep_mode && TempWasserMax <59   )              {water_pump_speed = 50;}    // asußer schlafmodus
-        if (TempWasserMax >= 60 && TempWasserMax <70)        {water_pump_speed=80;}      // 60 50%   
-        if (TempWasserMax >= 70 )                            {water_pump_speed=100;}     // ab 70 volle püulle
-        //}
-        }  
-    if ( modus == 0 && TempWasserMax >  105) {water_pump_speed = 100;}
-    if ( modus == 0 && TempWasserMax <= 102) {water_pump_speed = 0;  }
-    
-}//ende waserp
-/*
+void water_pump(){  
 
 
-*/
+            if (cleanBoard_Voltage < 135 && modus > 0){          // muss nur laufen wenn auto aus ( volt kleiner 13.3V)
+                if (cleanTempWasserMax > 60 )                            {water_pump_speed = 100;}
+                if (cleanTempWasserMax >=43 &&
+                    cleanTempWasserMax <= 60)                            {water_pump_speed = 75;}
+                if (cleanTempWasserMax < 40 && !sleep_mode)              {water_pump_speed = 0;  }
+                if (cleanTempWasserMax < 35 )                            {water_pump_speed = 0;  }
+            } else{water_pump_speed = 0;}            
+}          // TODO: elsif ?
+//ende waserp

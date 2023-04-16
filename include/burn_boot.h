@@ -127,12 +127,12 @@ int fuel_boot []= {      //fuelpump speed x100in  hz
 722,
 722,
 722,
+722,    
 722,
-722,
-722
+722     //nr130
 };
 
-int fan_boot [] {       // fan speed x100 in the first 100sec 
+unsigned int fan_boot [] {       // fan speed x100 in the first 100sec 
 2000,
 2000,
 2000,
@@ -263,7 +263,7 @@ int fan_boot [] {       // fan speed x100 in the first 100sec
 8100,
 8100,
 8100,
-8100,
+8100,   //nr130
 8100,
 8100,
 8100,
@@ -274,3 +274,4 @@ int fan_boot [] {       // fan speed x100 in the first 100sec
 8100,
 8100,
 };
+
